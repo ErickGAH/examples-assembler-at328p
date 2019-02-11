@@ -1,0 +1,81 @@
+; usar las interrupciones para mostrar on u of en dos display de 7 segmentos
+;
+; 
+
+.equ guion = 0b10000000
+.equ cero = 0b01111110
+.equ efe = 0b11000110
+.equ ene = 0b11010000
+.equ dizq = 0b00000010
+.equ dder= 0b00000001
+
+.org 0x00
+rjmp inicio
+
+.org 0x02  ; la direccion 2 y 4 corresponden ala interrupciones int 0 y 1 . observar a que pines corresponden
+rjmp inter0
+
+.org 0x04
+rjmp inter1
+
+inicio:
+sei   ; habilita las interrupciones globales
+LDI R16,0XFF
+OUT DDRB,R16
+OUT DDRC,R16
+ldi r16,0x00
+out ddrd,r16
+ldi r16,0x00
+sts eicra,r16   ;eicra es el registro de configuracion "external interrup control"
+                ; sts funciona para acceder a registros de configuracion , el cual ldi no llega
+ldi r16,0x0f
+out eimsk ,r16  ;eimsk es el registro que habilita las interrupciones
+
+normal:
+ldi r17,dder
+ldi r18,guion
+out portc,r17
+out portb,r18
+call delay  ;call funciona para saltar a una bandera pero mantiene la direccion del codigo donde se realizo
+            ;el salto para poder regresar a el punto inicial antes del salto (se usa ret)
+            ;otra forma de verlo , funciona como una lalda de funcion , y para retornar al codigo se usa ret al final  
+            ; de la otra parte del codigo
+ldi r17,dizq
+ldi r18,guion
+out portc,r17
+out portb,r18
+call delay
+rjmp normal
+
+delay: 
+ldi r20,0xff
+ciclo:
+dec r20
+brmi ciclo  ;salta si es menor
+ret         ; retorna a donde se ralizo el ultimo call
+
+inter0:
+ldi r22,cero
+ldi r21,dizq
+out portc,r21
+out portb,r22
+call delay
+ldi r23,efe
+ldi r24,dder
+out portc,r24
+out portb,r23
+call delay
+reti
+
+inter1: 
+ldi r25,cero
+ldi r26,dizq
+out portc,r26
+out portb,r25
+call delay
+ldi r27,ene
+ldi r28,dder
+out portc,r28
+out portb,r27
+call delay
+reti
