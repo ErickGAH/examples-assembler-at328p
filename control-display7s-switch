@@ -1,0 +1,40 @@
+; Programa : 
+; usar un switch o push button para cambair el estado de un display entre 1 y 0
+; 
+
+.equ cero = 0b00111111 ;.equ nos permite definir constantes para facilitar el codigo
+.equ uno = 0b00000110  ; se usa un display de 7 segmentos y lso codigos representan a 1 y 0
+
+.org 0x00 ; son el salto de memoria del microcontrolador, puedes configurar la interrupciones y otras funciones
+rjmp inicio; 0x00 corresponde al power reset, brown -out y otras funciones ,pero es normalmente usado para hacer el primer
+            ;salto a a la primer parte del codigo
+
+inicio:   ;una sentencia seguida de ":" funcina como banderas , las cuales permiten 
+          ;la disvisión del codigo en pseudo funciones 
+  ldi r16,0xff  ;ldi carga un valor a un registro , en este caso carga 11111111 al registro 16
+  out ddrb,r16 
+          ;out asigna el valor de un registro a otro, es importante por que los registros de configuracion no suelen
+          ;permitir el acceso directo 
+          ;ddrx establece como salida o entrada un puerto x .0xff se asigna como salida , 0x00 como entrada
+  ldi r16,0x00 
+  out ddrd,r16 ;puerto d como entrada , puerto b como salida
+rjmp main
+
+main: 
+  in r18,pind   ;obtiene el estado de un puerto y lo guarda en un registro . 
+  andi r18,0x01 ;hace una comparacion logica and , con un valor y un registro
+                ;en este caso la comparacion and nos filtrara el estado del puerto D para solo tomar encuenta un pin
+  cpi r18,0x00  ;compara un registro con un valor, el resultado se puede ver en las banderas que activa 
+  breq pon_cero ;si el valor es igual saltara a la bandera pon_cero, si no continua con la siguiente linea de codigo
+  cpi r18,0x01  ;
+  breq pon_uno  ;
+  
+pon_cero: 
+  ldi r16,cero  ; carga el valor definido al inicio a el registro 16
+  out portb,r16 ; muestra el valor del registro 16 al puerto b
+  rjmp main     ;rjmp es un salto corto a una bandera , salta a la bandera inicio
+  
+pon_uno:
+  ldi r16,uno
+  out portb,r16
+  rjmp main
