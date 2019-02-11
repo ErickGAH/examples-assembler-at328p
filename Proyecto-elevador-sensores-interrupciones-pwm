@@ -1,0 +1,396 @@
+.org 0x00
+rjmp inicio
+
+.org 0x08 ; interrupciones de pcint 8->13 es el puerto c
+jmp botones_exteriores
+
+.ORG 0x20; era del motor a pasos
+JMP TIMER
+
+inicio:
+	sei
+	ldi r18,0x00; guarda el paso del motor de 0x00 como pi1 a 0x03 como p3
+	ldi r19,0x01; el sentido del motor/ se usara tambien como preferencia del motor/ 0x01 baja 0x02 sube
+	ldi r20,0x02; guarda la preferencia del usuario (el sentido de las flechas en los botones del elev) 0x01 abajo, 0x02 arriba,0 sp
+	ldi r21,0x00; registro donde estan los destinos del elevador/ H0000 el segundo destino, L0000 el destino de preferencia
+	ldi r22,0x01; ultimo lugar donde estuvo el elevador
+				; r16,r17,r26,r27 son registros auxiliares en todo el programa
+	ldi r16,0x02
+	sts pcicr,r16; activa el pinchange para puerto c
+	ldi r16,0b00111111; activa que pines quieres usar; usaremos 6 para los botones exteriores
+	sts pcmsk1,r16
+
+	ldi r16,0xff
+	out ddrb,r16;salida del motor a pasos
+	ldi r16,0x00
+	out ddrc,r16; entrada para los 6 botones exteriores
+	out ddrd,r16; 4L sensores y 4H botones interiores
+rjmp main
+
+main:
+	//rjmp activa_motor
+	call numero_interior
+	out portb,r18;
+	in r23 , pind
+	andi r23,0x0f
+	cpi r23,0x00;compara si esta en un piso
+		brne guarda_posicion_elevador
+		;breq desactiva_motor
+	retu_main:	
+	mov r16,r21; copiamos el registro de posicion para manipularlo
+	andi r16,0x0f;enmascaramos solo la prosicion de preferencia
+	cpi r16,0x00; comparamos si esta vacio
+	breq main; si esta vacio regresa con tu jfa
+	rjmp ve_piso;si tiene un lugar almacenado llama a la funcion que mueve el motor
+
+		guarda_posicion_elevador:
+			cpi r23,0b00000001
+			breq posicion0
+			cpi r23,0b00000010
+			breq posicion1
+			cpi r23,0b00000100
+			breq posicion2
+			cpi r23,0b00001000
+			breq posicion3
+			rjmp retu_main
+
+				posicion0:
+				ldi r22,0x01
+				jmp retu_main
+				posicion1:
+				ldi r22,0x02
+				jmp retu_main
+				posicion2:
+				ldi r22,0x03
+				jmp retu_main
+				posicion3:
+				ldi r22,0x04
+				jmp retu_main
+ve_piso:
+	mov r16,r21;copiamos el destino para analizarlo
+	andi r16,0x0f; enmascara para solo usar el de preferencia
+	cp r22,r21; compara con la posicion del elevador
+	brlo sube; el elevador esta abajo brinca a la funcion sube
+	cp r22,r21
+	breq desactiva_motor; si el elevador esta en la posicion de destino para el motor
+	jmp baja; si el elevador esta arriba , brinca a la funcion baja
+
+	sube:
+	ldi r19,0x02; cambia la direccion del motor 
+	rjmp activa_motor
+	baja:
+	ldi r19,0x01; pone la direccion del motor hacia abajo
+	rjmp activa_motor
+
+	
+	desactiva_motor:
+		andi r21,0xf0;deja activo el segundo destino y borra el de preferencia
+		swap r21; convierte el segundo destino a el de preferencia
+		ldi r18,0x00; deja de mandar corriente al motor usando este registro
+		call numero_interior; revisa si esta un numero activo en el interior del elevador		
+		jmp main
+		/*andi r21,0xf0;deja activo el segundo destino y borra el de preferencia
+		swap r21; convierte el segundo destino a el de preferencia
+		LDI R16, 0X00; desactiva el preescalador
+		OUT TCCR0B, R16
+		LDI R16,0X00;desactiva interrupciones del timer
+		STS TIMSK0, R16
+		ldi r20,0x00; borra la preferencia de usuario
+		;call delay
+		jmp numero_interior*/
+
+			numero_interior:
+			in r16,pind; lee el puerto de los botones interiores
+			andi r16,0xf0; enmascaramos para solo ver los botones (por que el registro comparte con los sensores)
+			swap r16 ;cambiamos lso bits para una mejor comprension
+			cpi r16,0x00; comparamos si esta un numero en el switch
+			breq ret_uno; si no esta ninguno termina esta funcion
+			cpi r16,0x00; comparamos otra vez
+			brne disponibilidad;es una funcion que revisa si el primer lugar esta vacio para ponerlo
+
+				ret_uno:;esta funcion solo termina la funcion numero interior
+				ret
+
+				disponibilidad:; resvisa si el registro de destinos esta vacio para poner el nuevo lugar
+				mov r17,r21; hacemos una copia del registro de posiciones para manipilarlo
+				andi r17,0x0f; enmascaramos para solo ver el primer destino
+				cpi r17,0x00; si esta vacio guarda el nuero de forma directa
+				breq directo
+				mov r17,r21
+				andi r17,0xf0
+				cpi r17,0x00
+				brne segundo; si no esta vacio manda llamar una funcion que pone el lugar en el segun lugar
+				ret
+
+					directo:; pone el lugar nuevo directamente en el registro de posicion
+					in r16,pind
+					andi r16,0xf0
+					swap r16
+					ldi r21,0x00
+					mov r21,r16
+					ret
+
+					/*disponibilidad_segundo:
+					mov r17,r21
+					andi r17,0xf0
+					cpi r17,0x00
+					breq segundo
+					jmp main*/
+
+					segundo:;pone el nuevo lugar en la segunda posicon
+					in r16,pind
+					andi r16,0xf0
+					andi r21,0x0f
+					add r21,r16
+					clc
+					clv
+					ret
+						
+	delay:; hace perder el tiempo , 
+	ldi r30,0x00
+	ldi r31,0x00
+	del:
+	inc r30
+	cpi r30,0xf0
+	brlo del2
+	ret
+	del2:
+	inc r31
+	cpi r31,0xff
+	brlo del2
+	rjmp del
+
+	activa_motor:
+	mov r18,r19; copia el registro de direccion al de la salida continua del motor
+		/*LDI R16, 0X02; activa el modo ctc
+		STS TCCR0A, R16
+		LDI R16, 0b00000100; coloca el preescaldor en 1024p 60fps 
+		OUT TCCR0B, R16
+		LDI R16,0xff; coloca el limite del timer ( velocidad de giro)
+		STS OCR0A, R16
+		LDI R16,0X01; activa la interrupcion de sobreflujo
+		STS TIMSK0, R16*/
+	jmp main
+
+botones_exteriores:
+	in r16,pinc; leemos el puerto c donde estan los botones
+	andi r16,0b00111111; enmascaramos para solo tener enucuenta los botones
+	cpi r16,0x01;---------------
+	breq Apiso1u; todas estas comparaciones son para saber que boton se presiono
+	cpi r16,0x02
+	breq Apiso2d
+	cpi r16,0x04
+	breq Apiso2u
+	cpi r16,0x08
+	breq Apiso3d
+	cpi r16,0x10
+	breq Apiso3u
+	cpi r16,0x20
+	breq Apiso4d
+	cpi r16,0x00
+	breq cero_reti;------------	
+	regreso_exteriores_auxiliares:;es una etiqueta de apoyo , aqui regresan las funciones de arriba
+	mov r17,r21; hacemos copia del registro de destinos
+	andi r17,0x0f; en mascaramos para solo ver el de preferencia
+	cpi r17,0x00; compara si esta vacio
+	breq poner_en_preferencia; si esta vacio pone el nuevo lugar en el de preferencia
+	mov r17,r21;vuelve a comparar
+	andi r17,0xf0
+	cpi r17,0x00;
+	breq comparaciones_con_preferencia; si no esta vacio , manda llamar una funcion que revise el segundo lugar
+	reti 
+
+	cero_reti:
+		reti;
+			
+		Apiso1u: ; convertimos el boton presionado a 2 auxiliares, el piso=26 y la preferencia nueva=27
+		ldi r26,0x01
+		ldi r27,0x02
+		jmp regreso_exteriores_auxiliares
+		Apiso2d:
+		ldi r26,0x02
+		ldi r27,0x01
+		jmp regreso_exteriores_auxiliares
+		Apiso2u:
+		ldi r26,0x02
+		ldi r27,0x02
+		jmp regreso_exteriores_auxiliares
+		Apiso3d:
+		ldi r26,0x03
+		ldi r27,0x01
+		jmp regreso_exteriores_auxiliares
+		Apiso3u:
+		ldi r26,0x03
+		ldi r27,0x02
+		jmp regreso_exteriores_auxiliares
+		Apiso4d:
+		ldi r26,0x04
+		ldi r27,0x01
+		jmp regreso_exteriores_auxiliares
+
+		poner_en_preferencia:; convierte el boton seleccionado a un numero para guardar
+			mov r21,r26
+			mov r20,r27
+			reti
+			
+	comparaciones_con_preferencia:; revisa si el segundo lugar esta disponible
+		andi r21,0x0f
+		cp r21,r26; si el nuevo lugar es igual al que ya esta almacenado termina la interrupcion
+		breq cero_reti
+		cp r19,r27
+		breq poner_aux_segundo;estas comparaciones eran para la prefencia, ahora solo pone el lugar en el segundo lugar 
+		;breq comparar_primero
+		cp r19,r27
+		brne poner_aux_segundo
+		
+		/*comparar_primero:
+			cpi r19,0x02
+			breq comparaciones_up
+			cpi r19,0x02
+			brne comparaciones_dow
+
+			comparaciones_up:
+			cp r22,r21
+			brlo empa
+			cp r26,r21
+			brlo ampme
+
+			ampme:
+			cp r21,r22
+			brlo poner_aux_primero
+			jmp poner_aux_segundo
+
+			empa:
+			cp r21,r26
+			brlo poner_aux_segundo
+			jmp poner_aux_primero
+											
+		comparaciones_dow:
+			cp r22,r26
+			brlo emampd
+			cp r21,r22
+			brlo pmemad
+
+			pmemad:
+			cp r22,r26
+			brlo poner_aux_primero
+			jmp poner_aux_segundo
+
+			emampd:
+			cp r26,r21
+			brlo poner_aux_primero
+			jmp poner_aux_segundo
+			
+			*/	poner_aux_primero:				
+				swap r21
+				add r21,r26
+				clc 
+				clv
+				reti
+				poner_aux_segundo:
+				;andi r21,0x0f
+				swap r26
+				;andi r26,0xf0
+				add r21,r26
+				clc 
+				clv
+				reti
+				
+			
+	
+
+;------------------------------------------inicia programa del motor
+; basicamente mueve un 1 por un registro y de acuerdo a su posicion llama a el paso que le corresponde
+; 0001  -> 0010  -> 0100 -> 1000 
+; compara la posicion del bit activo y llama su paso correspondiente. Para invertir el sentido del motor 
+; Para invertir el sentido del motor , se invierte el movimiento del bit
+; 0001  <- 0010  <- 0100 <- 1000 
+
+	TIMER:
+		/*CPI R19, 0X02
+		BREQ INCREM
+		CPI R19, 0X01
+		BREQ DECRE*/
+		reti
+	/*DECRE:
+		CALL PASO
+		CPI R18, 0X00
+		BREQ LD8
+		DEC R18
+		reti		
+
+	INCREM:
+		CALL PASO
+		INC R18
+		CPI R18,0x08
+		BREQ LD0
+		reti
+				
+	LD8:
+		LDI R18, 0x08
+		RETi
+	LD0:
+		LDI R18, 0X00
+		RETi
+
+	PASO:
+		CPI R18, 0X00
+		BREQ PASO1
+		CPI R18, 0X01
+		BREQ PASO2
+		CPI R18, 0X02
+		BREQ PASO3
+		CPI R18, 0X03
+		BREQ PASO4
+		CPI R18, 0X04
+		BREQ PASO5
+		CPI R18, 0X05
+		BREQ PASO6
+		CPI R18, 0X06
+		BREQ PASO7
+		CPI R18, 0X07
+		BREQ PASO8
+		
+
+		PASO1:
+			LDI R16,0x01
+			OUT PORTB, R16
+			RETi
+		PASO2:
+			LDI R16, 0X03
+			OUT PORTB, R16
+			RETi
+		PASO3:
+			LDI R16, 0X02
+			OUT PORTB, R16
+			RETi
+		PASO4:
+			LDI R16, 0X06
+			OUT PORTB, R16
+			RETi
+		PASO5:
+			LDI R16, 0X04
+			OUT PORTB, R16
+			RETi
+		PASO6:
+			LDI R16, 0X0C
+			OUT PORTB, R16
+			RETi
+		PASO7:
+			LDI R16, 0X08
+			OUT PORTB, R16
+			RETi
+		PASO8:
+			LDI R16, 0X09
+			OUT PORTB, R16
+			RETi*/
+		
+
+;-----------------------------------fin del programa del motor
+
+
+
+
+
+
+
